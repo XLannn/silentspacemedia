@@ -6,13 +6,16 @@ import {
   ImagePlus,
   Loader2,
   LogOut,
+  Mail,
   Plus,
+  RefreshCcw,
   Save,
   ShieldCheck,
   Trash2,
 } from 'lucide-react'
 import { FormEvent, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { getContactInquiries } from '../lib/inquiries'
 import { getPortfolioData, savePortfolioData, seedPortfolioData } from '../lib/portfolio'
 import {
   adminUsersTable,
@@ -25,6 +28,7 @@ import type {
   PortfolioData,
   PortfolioImage,
 } from '../types/portfolio'
+import type { ContactInquiry } from '../types/contactInquiry'
 
 type AuthState = 'loading' | 'guest' | 'authed'
 
@@ -33,7 +37,7 @@ type UploadState = {
   isUploading: boolean
 }
 
-type AdminTab = 'portfolio' | 'credentials'
+type AdminTab = 'portfolio' | 'credentials' | 'inquiries'
 
 function createClientId(prefix: string): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -105,6 +109,9 @@ function AdminPage() {
     isUploading: false,
   })
   const [activeTab, setActiveTab] = useState<AdminTab>('portfolio')
+  const [inquiries, setInquiries] = useState<ContactInquiry[]>([])
+  const [isLoadingInquiries, setIsLoadingInquiries] = useState(false)
+  const [inquiriesMessage, setInquiriesMessage] = useState('')
 
   const [newUsername, setNewUsername] = useState('')
   const [usernameCurrentPassword, setUsernameCurrentPassword] = useState('')
@@ -156,6 +163,7 @@ function AdminPage() {
 
         setAuthState('authed')
         await loadPortfolio()
+        await loadInquiries()
       } catch {
         if (active) {
           setAuthState('guest')
@@ -170,6 +178,12 @@ function AdminPage() {
     }
   }, [])
 
+  useEffect(() => {
+    if (authState === 'authed' && activeTab === 'inquiries') {
+      void loadInquiries()
+    }
+  }, [activeTab, authState])
+
   async function loadPortfolio() {
     try {
       const portfolioData = await getPortfolioData()
@@ -178,6 +192,30 @@ function AdminPage() {
       }
     } catch {
       // Keep existing state fallback.
+    }
+  }
+
+  async function loadInquiries() {
+    setIsLoadingInquiries(true)
+    setInquiriesMessage('')
+
+    try {
+      const result = await getContactInquiries()
+
+      if (result.error) {
+        setInquiriesMessage(result.error)
+        setIsLoadingInquiries(false)
+        return
+      }
+
+      setInquiries(result.data ?? [])
+      if (!result.data || result.data.length === 0) {
+        setInquiriesMessage('No inquiries yet.')
+      }
+    } catch {
+      setInquiriesMessage('Could not load inquiries. Please try again.')
+    } finally {
+      setIsLoadingInquiries(false)
     }
   }
 
@@ -229,6 +267,7 @@ function AdminPage() {
       setPassword('')
       setShowLoginPassword(false)
       await loadPortfolio()
+      await loadInquiries()
     } catch {
       setLoginError('Login failed. Please try again.')
     } finally {
@@ -251,6 +290,8 @@ function AdminPage() {
     setSaveMessage('')
     setUsernameMessage('')
     setPasswordMessage('')
+    setInquiries([])
+    setInquiriesMessage('')
   }
 
   function updateCategories(
@@ -732,6 +773,17 @@ function AdminPage() {
             >
               Credentials
             </button>
+            <button
+              className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+                activeTab === 'inquiries'
+                  ? 'bg-white text-slate-900 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+              onClick={() => setActiveTab('inquiries')}
+              type="button"
+            >
+              Inquiries
+            </button>
           </div>
         </header>
 
@@ -931,6 +983,70 @@ function AdminPage() {
                 </div>
               </form>
             </div>
+          </section>
+        ) : null}
+
+        {activeTab === 'inquiries' ? (
+          <section className="rounded-[2rem] bg-white p-6 shadow-[0_18px_60px_rgba(15,23,42,0.08)] sm:p-8">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="font-heading text-2xl font-bold text-slate-900">
+                  Contact Inquiries
+                </h2>
+                <p className="mt-1 text-sm text-slate-600">
+                  New submissions from your contact forms appear here.
+                </p>
+              </div>
+              <button
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-900 hover:text-slate-900 disabled:opacity-70"
+                onClick={() => void loadInquiries()}
+                type="button"
+                disabled={isLoadingInquiries}
+              >
+                {isLoadingInquiries ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCcw className="h-4 w-4" />
+                )}
+                <span>{isLoadingInquiries ? 'Refreshing...' : 'Refresh'}</span>
+              </button>
+            </div>
+
+            <div className="mt-6 space-y-4">
+              {inquiries.map((inquiry) => (
+                <article
+                  key={inquiry.id}
+                  className="rounded-2xl border border-slate-200 bg-slate-50 p-5"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <h3 className="text-lg font-semibold text-slate-900">{inquiry.name}</h3>
+                    <p className="text-xs font-medium uppercase tracking-[0.2em] text-slate-500">
+                      {new Date(inquiry.created_at).toLocaleString()}
+                    </p>
+                  </div>
+                  <a
+                    className="mt-2 inline-flex items-center gap-2 text-sm font-medium text-cyan-700 hover:text-cyan-900"
+                    href={`mailto:${inquiry.email}`}
+                  >
+                    <Mail className="h-4 w-4" />
+                    <span>{inquiry.email}</span>
+                  </a>
+                  <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-700">
+                    {inquiry.message}
+                  </p>
+                </article>
+              ))}
+            </div>
+
+            {!isLoadingInquiries && inquiries.length === 0 ? (
+              <p className="mt-6 rounded-xl border border-dashed border-slate-300 px-4 py-6 text-center text-sm text-slate-500">
+                {inquiriesMessage || 'No inquiries yet.'}
+              </p>
+            ) : null}
+
+            {inquiriesMessage && inquiries.length > 0 ? (
+              <p className="mt-4 text-sm text-slate-500">{inquiriesMessage}</p>
+            ) : null}
           </section>
         ) : null}
 
