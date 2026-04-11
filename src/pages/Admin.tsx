@@ -88,7 +88,7 @@ async function resolveUsernameByEmail(email: string): Promise<string | null> {
 
 function AdminPage() {
   const [authState, setAuthState] = useState<AuthState>('loading')
-  const [username, setUsername] = useState('')
+  const [loginIdentifier, setLoginIdentifier] = useState('')
   const [password, setPassword] = useState('')
   const [showLoginPassword, setShowLoginPassword] = useState(false)
   const [loginError, setLoginError] = useState('')
@@ -195,8 +195,11 @@ function AdminPage() {
     }
 
     try {
-      const normalizedUsername = username.trim()
-      const loginEmail = await resolveAdminEmailByUsername(normalizedUsername)
+      const normalizedIdentifier = loginIdentifier.trim()
+      const looksLikeEmail = normalizedIdentifier.includes('@')
+      const loginEmail = looksLikeEmail
+        ? normalizedIdentifier
+        : await resolveAdminEmailByUsername(normalizedIdentifier)
 
       if (!loginEmail) {
         setLoginError('Invalid username or password.')
@@ -217,7 +220,12 @@ function AdminPage() {
 
       setAuthState('authed')
       setSessionEmail(loginEmail)
-      setCurrentUsername(normalizedUsername)
+      if (looksLikeEmail) {
+        const mappedUsername = await resolveUsernameByEmail(loginEmail)
+        setCurrentUsername(mappedUsername ?? '')
+      } else {
+        setCurrentUsername(normalizedIdentifier)
+      }
       setPassword('')
       setShowLoginPassword(false)
       await loadPortfolio()
@@ -234,7 +242,7 @@ function AdminPage() {
     }
 
     setAuthState('guest')
-    setUsername('')
+    setLoginIdentifier('')
     setPassword('')
     setShowLoginPassword(false)
     setSessionEmail('')
@@ -604,18 +612,19 @@ function AdminPage() {
             </p>
             <h1 className="font-heading mt-4 text-3xl font-bold">Portfolio Manager</h1>
             <p className="mt-3 text-sm text-slate-200">
-              Sign in with your admin username and password.
+              Sign in with your admin username/email and password.
             </p>
 
             <form className="mt-8 space-y-4" onSubmit={handleLogin}>
               <label className="block space-y-2 text-sm">
-                <span>Username</span>
+                <span>Username or Email</span>
                 <input
                   className="w-full rounded-xl border border-white/25 bg-black/20 px-4 py-3 outline-none ring-cyan-300/70 transition focus:ring-2"
-                  value={username}
-                  onChange={(event) => setUsername(event.target.value)}
+                  value={loginIdentifier}
+                  onChange={(event) => setLoginIdentifier(event.target.value)}
                   type="text"
                   autoComplete="username"
+                  placeholder="username or email"
                   required
                 />
               </label>
