@@ -1,47 +1,74 @@
-# Admin Setup
+# Supabase Admin Setup
 
-## 1) Local environment
+## 1) Environment variables
 
-Create a `.env.local` file in the project root using `.env.example` as reference:
+Create `.env.local` in the project root from `.env.example`:
 
 ```env
-ADMIN_USERNAME=your_admin_username
-ADMIN_PASSWORD=your_admin_password
-ADMIN_SESSION_SECRET=your_long_random_secret
-BLOB_READ_WRITE_TOKEN=your_vercel_blob_read_write_token
+VITE_SUPABASE_URL=https://your-project-ref.supabase.co
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+VITE_SUPABASE_STORAGE_BUCKET=portfolio-images
+VITE_SUPABASE_PORTFOLIO_TABLE=portfolio_content
+VITE_SUPABASE_ADMIN_USERS_TABLE=admin_users
+# Optional (only needed for one-time bootstrap script)
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 ```
 
-`.env.local` is already ignored by Git in `.gitignore`.
+For production, add the same variables in your hosting provider (for example Vercel Project Settings -> Environment Variables).
 
-## 2) Upload current portfolio to Vercel Blob (one-time bootstrap)
+## 2) Supabase SQL setup
 
-Run:
+In Supabase SQL Editor, run:
+
+`supabase/schema.sql`
+
+This creates:
+
+- `portfolio_content` (stores full portfolio JSON)
+- `admin_users` (optional username -> email mapping)
+- RLS policies for read/write
+
+## 3) Supabase Auth admin account
+
+Create an admin user in Supabase Auth (email + password).
+
+Then add a username mapping row in `admin_users`:
+
+```sql
+insert into public.admin_users (username, email)
+values ('silentspacemedia', 'your-admin-email@example.com')
+on conflict (username) do update set email = excluded.email;
+```
+
+Then you can login in `/admin` using:
+
+- Username: `silentspacemedia`
+- Password: your Supabase Auth password
+
+If you want the initial password to be `silentspacemedia@123`, create the Supabase Auth user with that password.
+
+## 4) Storage bucket
+
+`supabase/schema.sql` already creates a public bucket named `portfolio-images`
+and the required upload/read policies.
+
+If you use a different bucket name, update:
+
+- `VITE_SUPABASE_STORAGE_BUCKET`
+- the bucket id inside `supabase/schema.sql` policies
+
+## 5) Run and use admin
+
+```bash
+npm run dev
+```
+
+Open `/admin`, login, edit categories/order/images, then click **Save Portfolio**.
+
+## 6) Optional one-time bootstrap from local `public/assets`
+
+If you want to upload all current local assets and create the portfolio document automatically:
 
 ```bash
 npm run bootstrap:portfolio
 ```
-
-This uploads all files from `public/assets` and writes portfolio metadata to:
-
-- `portfolio/images/*`
-- `portfolio/portfolio-data.json`
-
-## 3) Run app and use admin page
-
-- Start local app with API support:
-  ```bash
-  npx vercel dev
-  ```
-- Open `http://localhost:3000/admin`
-- Login with `ADMIN_USERNAME` and `ADMIN_PASSWORD`
-- Manage category titles, order, and image uploads
-- Click `Save Portfolio` to publish changes
-
-## 4) Vercel project environment variables
-
-Add the same four variables in Vercel Project Settings -> Environment Variables:
-
-- `ADMIN_USERNAME`
-- `ADMIN_PASSWORD`
-- `ADMIN_SESSION_SECRET`
-- `BLOB_READ_WRITE_TOKEN`

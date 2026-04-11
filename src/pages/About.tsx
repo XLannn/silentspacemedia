@@ -6,7 +6,7 @@ function AboutPage() {
       <div className="overflow-hidden rounded-[2rem] bg-white shadow-[0_18px_60px_rgba(15,23,42,0.06)]">
         <img
           alt="silentspacemedia about page visual"
-          className="h-[34rem] w-full object-cover object-top sm:h-[48rem]"
+          className="h-auto w-full"
           src={aboutImageUrl}
         />
       </div>

@@ -1,7 +1,25 @@
-import { upload } from '@vercel/blob/client'
-import { ArrowDown, ArrowUp, ImagePlus, Loader2, LogOut, Plus, Save, Trash2 } from 'lucide-react'
+import {
+  ArrowDown,
+  ArrowUp,
+  Eye,
+  EyeOff,
+  ImagePlus,
+  Loader2,
+  LogOut,
+  Plus,
+  Save,
+  ShieldCheck,
+  Trash2,
+} from 'lucide-react'
 import { FormEvent, useEffect, useState } from 'react'
-import { normalizePortfolioData, seedPortfolioData } from '../lib/portfolio'
+import { Link } from 'react-router-dom'
+import { getPortfolioData, savePortfolioData, seedPortfolioData } from '../lib/portfolio'
+import {
+  adminUsersTable,
+  isSupabaseConfigured,
+  supabase,
+  supabaseBucket,
+} from '../lib/supabase'
 import type {
   PortfolioCategory,
   PortfolioData,
@@ -15,18 +33,7 @@ type UploadState = {
   isUploading: boolean
 }
 
-async function readJsonSafe(response: Response): Promise<unknown | null> {
-  const contentType = response.headers.get('content-type') ?? ''
-  if (!contentType.includes('application/json')) {
-    return null
-  }
-
-  try {
-    return (await response.json()) as unknown
-  } catch {
-    return null
-  }
-}
+type AdminTab = 'portfolio' | 'credentials'
 
 function createClientId(prefix: string): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -43,12 +50,51 @@ function safeFileName(name: string): string {
     .replace(/-+/g, '-')
 }
 
+async function resolveAdminEmailByUsername(username: string): Promise<string | null> {
+  if (!supabase) {
+    return null
+  }
+
+  const { data } = await supabase
+    .from(adminUsersTable)
+    .select('email')
+    .eq('username', username)
+    .maybeSingle()
+
+  if (data && typeof data.email === 'string' && data.email.trim()) {
+    return data.email
+  }
+
+  return null
+}
+
+async function resolveUsernameByEmail(email: string): Promise<string | null> {
+  if (!supabase) {
+    return null
+  }
+
+  const { data } = await supabase
+    .from(adminUsersTable)
+    .select('username')
+    .eq('email', email)
+    .maybeSingle()
+
+  if (data && typeof data.username === 'string' && data.username.trim()) {
+    return data.username
+  }
+
+  return null
+}
+
 function AdminPage() {
   const [authState, setAuthState] = useState<AuthState>('loading')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [showLoginPassword, setShowLoginPassword] = useState(false)
   const [loginError, setLoginError] = useState('')
   const [isLoggingIn, setIsLoggingIn] = useState(false)
+  const [sessionEmail, setSessionEmail] = useState('')
+  const [currentUsername, setCurrentUsername] = useState('')
 
   const [data, setData] = useState<PortfolioData>(seedPortfolioData)
   const [isSaving, setIsSaving] = useState(false)
@@ -58,30 +104,58 @@ function AdminPage() {
     categoryId: null,
     isUploading: false,
   })
+  const [activeTab, setActiveTab] = useState<AdminTab>('portfolio')
+
+  const [newUsername, setNewUsername] = useState('')
+  const [usernameCurrentPassword, setUsernameCurrentPassword] = useState('')
+  const [showUsernameCurrentPassword, setShowUsernameCurrentPassword] = useState(false)
+  const [isUpdatingUsername, setIsUpdatingUsername] = useState(false)
+  const [usernameMessage, setUsernameMessage] = useState('')
+
+  const [oldPassword, setOldPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [showOldPassword, setShowOldPassword] = useState(false)
+  const [showNewPassword, setShowNewPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false)
+  const [passwordMessage, setPasswordMessage] = useState('')
 
   useEffect(() => {
     let active = true
 
     async function checkAuth() {
+      if (!isSupabaseConfigured || !supabase) {
+        if (active) {
+          setAuthState('guest')
+          setLoginError(
+            'Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.',
+          )
+        }
+        return
+      }
+
       try {
-        const response = await fetch('/api/admin/me', { credentials: 'include' })
-        const body = await readJsonSafe(response)
+        const { data } = await supabase.auth.getSession()
         if (!active) {
           return
         }
 
-        const isAuthed =
-          response.ok &&
-          body !== null &&
-          typeof body === 'object' &&
-          (body as { authenticated?: boolean }).authenticated === true
-
-        if (isAuthed) {
-          setAuthState('authed')
-          await loadPortfolio()
-        } else {
+        const session = data.session
+        if (!session) {
           setAuthState('guest')
+          return
         }
+
+        const email = session.user.email ?? ''
+        setSessionEmail(email)
+        if (email) {
+          const mappedUsername = await resolveUsernameByEmail(email)
+          setCurrentUsername(mappedUsername ?? '')
+        }
+
+        setAuthState('authed')
+        await loadPortfolio()
       } catch {
         if (active) {
           setAuthState('guest')
@@ -98,19 +172,9 @@ function AdminPage() {
 
   async function loadPortfolio() {
     try {
-      const response = await fetch('/api/admin/portfolio', {
-        credentials: 'include',
-      })
-
-      if (!response.ok) {
-        return
-      }
-
-      const raw = (await response.json()) as unknown
-      const normalized = normalizePortfolioData(raw)
-
-      if (normalized) {
-        setData(normalized)
+      const portfolioData = await getPortfolioData()
+      if (portfolioData.categories.length > 0) {
+        setData(portfolioData)
       }
     } catch {
       // Keep existing state fallback.
@@ -122,57 +186,40 @@ function AdminPage() {
     setIsLoggingIn(true)
     setLoginError('')
 
+    if (!isSupabaseConfigured || !supabase) {
+      setLoginError(
+        'Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.',
+      )
+      setIsLoggingIn(false)
+      return
+    }
+
     try {
-      const response = await fetch('/api/admin/login', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ username, password }),
+      const normalizedUsername = username.trim()
+      const loginEmail = await resolveAdminEmailByUsername(normalizedUsername)
+
+      if (!loginEmail) {
+        setLoginError('Invalid username or password.')
+        setIsLoggingIn(false)
+        return
+      }
+
+      const { error } = await supabase.auth.signInWithPassword({
+        email: loginEmail,
+        password,
       })
 
-      const contentType = response.headers.get('content-type') ?? ''
-
-      if (
-        response.status === 404 ||
-        contentType.includes('text/html') ||
-        contentType.includes('javascript')
-      ) {
-        setLoginError(
-          'Admin API is not running. Start with `npx vercel dev` and open http://localhost:3000/admin.',
-        )
-        setIsLoggingIn(false)
-        return
-      }
-
-      if (!response.ok) {
-        const body = await readJsonSafe(response)
-        const message =
-          body !== null &&
-          typeof body === 'object' &&
-          typeof (body as { error?: unknown }).error === 'string'
-            ? (body as { error: string }).error
-            : 'Invalid username or password.'
-        setLoginError(message)
-        setIsLoggingIn(false)
-        return
-      }
-
-      const body = await readJsonSafe(response)
-      const didLogin =
-        body !== null &&
-        typeof body === 'object' &&
-        (body as { ok?: boolean }).ok === true
-
-      if (!didLogin) {
-        setLoginError(
-          'Admin API is not available in this runtime. Use `vercel dev` locally, or deploy on Vercel.',
-        )
+      if (error) {
+        setLoginError('Invalid username or password.')
         setIsLoggingIn(false)
         return
       }
 
       setAuthState('authed')
+      setSessionEmail(loginEmail)
+      setCurrentUsername(normalizedUsername)
       setPassword('')
+      setShowLoginPassword(false)
       await loadPortfolio()
     } catch {
       setLoginError('Login failed. Please try again.')
@@ -182,15 +229,20 @@ function AdminPage() {
   }
 
   async function handleLogout() {
-    await fetch('/api/admin/logout', {
-      method: 'POST',
-      credentials: 'include',
-    })
+    if (supabase) {
+      await supabase.auth.signOut()
+    }
 
     setAuthState('guest')
     setUsername('')
     setPassword('')
+    setShowLoginPassword(false)
+    setSessionEmail('')
+    setCurrentUsername('')
+    setActiveTab('portfolio')
     setSaveMessage('')
+    setUsernameMessage('')
+    setPasswordMessage('')
   }
 
   function updateCategories(
@@ -271,6 +323,13 @@ function AdminPage() {
       return
     }
 
+    if (!isSupabaseConfigured || !supabase) {
+      setSaveMessage(
+        'Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.',
+      )
+      return
+    }
+
     setUploadState({ categoryId, isUploading: true })
     setSaveMessage('')
 
@@ -278,19 +337,31 @@ function AdminPage() {
       const uploadedImages: PortfolioImage[] = []
 
       for (const file of Array.from(files)) {
-        const pathname = `portfolio/images/${Date.now()}-${safeFileName(file.name)}`
+        const pathname = `${categoryId}/${Date.now()}-${safeFileName(file.name)}`
+        const { data: uploadData, error } = await supabase.storage
+          .from(supabaseBucket)
+          .upload(pathname, file, {
+            cacheControl: '3600',
+            upsert: false,
+            contentType: file.type || undefined,
+          })
 
-        const blob = await upload(pathname, file, {
-          access: 'public',
-          handleUploadUrl: '/api/admin/upload',
-          multipart: true,
-          clientPayload: JSON.stringify({ categoryId }),
-        })
+        if (error || !uploadData) {
+          throw error ?? new Error('Upload failed')
+        }
+
+        const { data: publicData } = supabase.storage
+          .from(supabaseBucket)
+          .getPublicUrl(uploadData.path)
+
+        if (!publicData.publicUrl) {
+          throw new Error('Could not create a public URL')
+        }
 
         uploadedImages.push({
           id: createClientId('image'),
-          url: blob.url,
-          pathname: blob.pathname,
+          url: publicData.publicUrl,
+          pathname: uploadData.path,
         })
       }
 
@@ -316,33 +387,16 @@ function AdminPage() {
     setSaveMessage('')
 
     try {
-      const response = await fetch('/api/admin/portfolio', {
-        method: 'PUT',
-        credentials: 'include',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          categories: data.categories,
-        }),
-      })
+      const result = await savePortfolioData(data.categories)
 
-      if (!response.ok) {
-        const body = await readJsonSafe(response)
-        const message =
-          body !== null &&
-          typeof body === 'object' &&
-          typeof (body as { error?: unknown }).error === 'string'
-            ? (body as { error: string }).error
-            : 'Could not save. Please check your environment variables.'
-
-        setSaveMessage(message)
+      if (result.error) {
+        setSaveMessage(result.error)
         setIsSaving(false)
         return
       }
 
-      const raw = await readJsonSafe(response)
-      const normalized = normalizePortfolioData(raw)
-      if (normalized) {
-        setData(normalized)
+      if (result.data) {
+        setData(result.data)
       }
 
       setSaveMessage('Saved successfully.')
@@ -350,6 +404,180 @@ function AdminPage() {
       setSaveMessage('Save failed. Please try again.')
     } finally {
       setIsSaving(false)
+    }
+  }
+
+  async function handleUpdateUsername(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    if (!supabase || !sessionEmail) {
+      setUsernameMessage('No active admin session found. Please login again.')
+      return
+    }
+
+    const trimmedNewUsername = newUsername.trim()
+
+    if (!currentUsername) {
+      setUsernameMessage(
+        'Current username mapping was not found. Add a row in admin_users first.',
+      )
+      return
+    }
+
+    if (!trimmedNewUsername) {
+      setUsernameMessage('New username cannot be empty.')
+      return
+    }
+
+    if (trimmedNewUsername === currentUsername) {
+      setUsernameMessage('New username is the same as current username.')
+      return
+    }
+
+    if (!usernameCurrentPassword) {
+      setUsernameMessage('Enter current password to confirm username change.')
+      return
+    }
+
+    setIsUpdatingUsername(true)
+    setUsernameMessage('')
+
+    try {
+      const { error: reAuthError } = await supabase.auth.signInWithPassword({
+        email: sessionEmail,
+        password: usernameCurrentPassword,
+      })
+
+      if (reAuthError) {
+        setUsernameMessage('Current password is incorrect.')
+        setIsUpdatingUsername(false)
+        return
+      }
+
+      const { data: usernameOwner, error: usernameCheckError } = await supabase
+        .from(adminUsersTable)
+        .select('email')
+        .eq('username', trimmedNewUsername)
+        .maybeSingle()
+
+      if (usernameCheckError) {
+        setUsernameMessage(usernameCheckError.message)
+        setIsUpdatingUsername(false)
+        return
+      }
+
+      if (usernameOwner && usernameOwner.email !== sessionEmail) {
+        setUsernameMessage('That username is already in use.')
+        setIsUpdatingUsername(false)
+        return
+      }
+
+      const { data: currentMapping, error: mappingFindError } = await supabase
+        .from(adminUsersTable)
+        .select('username')
+        .eq('email', sessionEmail)
+        .maybeSingle()
+
+      if (mappingFindError) {
+        setUsernameMessage(mappingFindError.message)
+        setIsUpdatingUsername(false)
+        return
+      }
+
+      if (currentMapping) {
+        const { error: mappingUpdateError } = await supabase
+          .from(adminUsersTable)
+          .update({ username: trimmedNewUsername })
+          .eq('email', sessionEmail)
+
+        if (mappingUpdateError) {
+          setUsernameMessage(mappingUpdateError.message)
+          setIsUpdatingUsername(false)
+          return
+        }
+      } else {
+        const { error: mappingInsertError } = await supabase
+          .from(adminUsersTable)
+          .insert({ username: trimmedNewUsername, email: sessionEmail })
+
+        if (mappingInsertError) {
+          setUsernameMessage(mappingInsertError.message)
+          setIsUpdatingUsername(false)
+          return
+        }
+      }
+
+      setCurrentUsername(trimmedNewUsername)
+      setNewUsername('')
+      setUsernameCurrentPassword('')
+      setShowUsernameCurrentPassword(false)
+      setUsernameMessage('Username updated successfully.')
+    } catch {
+      setUsernameMessage('Could not update username. Please try again.')
+    } finally {
+      setIsUpdatingUsername(false)
+    }
+  }
+
+  async function handleUpdatePassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    if (!supabase || !sessionEmail) {
+      setPasswordMessage('No active admin session found. Please login again.')
+      return
+    }
+
+    if (!oldPassword) {
+      setPasswordMessage('Enter your current password.')
+      return
+    }
+
+    if (newPassword.length < 8) {
+      setPasswordMessage('New password must be at least 8 characters.')
+      return
+    }
+
+    if (newPassword !== confirmPassword) {
+      setPasswordMessage('New password and confirm password do not match.')
+      return
+    }
+
+    setIsUpdatingPassword(true)
+    setPasswordMessage('')
+
+    try {
+      const { error: reAuthError } = await supabase.auth.signInWithPassword({
+        email: sessionEmail,
+        password: oldPassword,
+      })
+
+      if (reAuthError) {
+        setPasswordMessage('Current password is incorrect.')
+        setIsUpdatingPassword(false)
+        return
+      }
+
+      const { error: passwordUpdateError } = await supabase.auth.updateUser({
+        password: newPassword,
+      })
+
+      if (passwordUpdateError) {
+        setPasswordMessage(passwordUpdateError.message)
+        setIsUpdatingPassword(false)
+        return
+      }
+
+      setOldPassword('')
+      setNewPassword('')
+      setConfirmPassword('')
+      setShowOldPassword(false)
+      setShowNewPassword(false)
+      setShowConfirmPassword(false)
+      setPasswordMessage('Password updated successfully.')
+    } catch {
+      setPasswordMessage('Could not update password. Please try again.')
+    } finally {
+      setIsUpdatingPassword(false)
     }
   }
 
@@ -376,7 +604,7 @@ function AdminPage() {
             </p>
             <h1 className="font-heading mt-4 text-3xl font-bold">Portfolio Manager</h1>
             <p className="mt-3 text-sm text-slate-200">
-              Sign in with your admin credentials from `.env.local` (or Vercel project env vars).
+              Sign in with your admin username and password.
             </p>
 
             <form className="mt-8 space-y-4" onSubmit={handleLogin}>
@@ -393,15 +621,37 @@ function AdminPage() {
               </label>
               <label className="block space-y-2 text-sm">
                 <span>Password</span>
-                <input
-                  className="w-full rounded-xl border border-white/25 bg-black/20 px-4 py-3 outline-none ring-cyan-300/70 transition focus:ring-2"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  type="password"
-                  autoComplete="current-password"
-                  required
-                />
+                <div className="relative">
+                  <input
+                    className="w-full rounded-xl border border-white/25 bg-black/20 px-4 py-3 pr-12 outline-none ring-cyan-300/70 transition focus:ring-2"
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    type={showLoginPassword ? 'text' : 'password'}
+                    autoComplete="current-password"
+                    required
+                  />
+                  <button
+                    className="absolute right-5 top-1/2 z-10 inline-flex h-10 w-5 -translate-y-1/2 items-center justify-center text-slate-300 transition hover:text-white focus:outline-none"
+                    type="button"
+                    onClick={() => setShowLoginPassword((value) => !value)}
+                    aria-label={showLoginPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showLoginPassword ? (
+                      <EyeOff className="h-4 w-4" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
+                  </button>
+                </div>
               </label>
+              <div className="text-right">
+                <Link
+                  className="text-sm text-cyan-200 transition hover:text-cyan-100"
+                  to="/admin/forgot-password"
+                >
+                  Forgot password?
+                </Link>
+              </div>
 
               {loginError ? (
                 <p className="rounded-xl border border-red-300/50 bg-red-500/20 px-3 py-2 text-sm text-red-100">
@@ -437,7 +687,7 @@ function AdminPage() {
                 Portfolio Editor
               </h1>
               <p className="mt-2 text-sm text-slate-600">
-                Manage categories, order, and upload images directly to Vercel Blob.
+                Manage portfolio and credentials from one place.
               </p>
             </div>
             <button
@@ -449,9 +699,235 @@ function AdminPage() {
               Logout
             </button>
           </div>
+
+          <div className="mt-6 inline-flex rounded-xl border border-slate-200 bg-slate-100 p-1">
+            <button
+              className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+                activeTab === 'portfolio'
+                  ? 'bg-white text-slate-900 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+              onClick={() => setActiveTab('portfolio')}
+              type="button"
+            >
+              Edit Portfolio
+            </button>
+            <button
+              className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+                activeTab === 'credentials'
+                  ? 'bg-white text-slate-900 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+              onClick={() => setActiveTab('credentials')}
+              type="button"
+            >
+              Credentials
+            </button>
+          </div>
         </header>
 
-        <section className="rounded-[2rem] bg-white p-6 shadow-[0_18px_60px_rgba(15,23,42,0.08)] sm:p-8">
+        {activeTab === 'credentials' ? (
+          <section className="rounded-[2rem] bg-white p-6 shadow-[0_18px_60px_rgba(15,23,42,0.08)] sm:p-8">
+            <h2 className="font-heading text-2xl font-bold text-slate-900">
+              Admin Credentials
+            </h2>
+            <p className="mt-2 text-sm text-slate-600">
+              Current username:{' '}
+              <span className="font-semibold">{currentUsername || '(not mapped)'}</span>
+            </p>
+
+            <div className="mt-6 grid gap-6 xl:grid-cols-2">
+              <form
+                className="rounded-2xl border border-slate-200 bg-slate-50 p-5"
+                onSubmit={handleUpdateUsername}
+              >
+                <h3 className="text-lg font-semibold text-slate-900">Change Username</h3>
+                <p className="mt-1 text-sm text-slate-600">
+                  Enter a new username and confirm with your current password.
+                </p>
+
+                <div className="mt-4 space-y-4">
+                  <label className="block space-y-2 text-sm text-slate-700">
+                    <span>New Username</span>
+                    <input
+                      className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none ring-slate-300 transition focus:ring-2"
+                      type="text"
+                      value={newUsername}
+                      onChange={(event) => setNewUsername(event.target.value)}
+                      required
+                    />
+                  </label>
+
+                  <label className="block space-y-2 text-sm text-slate-700">
+                    <span>Current Password</span>
+                    <div className="relative">
+                      <input
+                        className="w-full rounded-xl border border-slate-300 px-4 py-3 pr-12 outline-none ring-slate-300 transition focus:ring-2"
+                        type={showUsernameCurrentPassword ? 'text' : 'password'}
+                        value={usernameCurrentPassword}
+                        onChange={(event) => setUsernameCurrentPassword(event.target.value)}
+                        autoComplete="current-password"
+                        required
+                      />
+                      <button
+                        className="absolute right-5 top-1/2 z-10 inline-flex h-10 w-5 -translate-y-1/2 items-center justify-center text-slate-400 transition hover:text-slate-700 focus:outline-none"
+                        type="button"
+                        onClick={() =>
+                          setShowUsernameCurrentPassword((value) => !value)
+                        }
+                        aria-label={
+                          showUsernameCurrentPassword
+                            ? 'Hide current password'
+                            : 'Show current password'
+                        }
+                      >
+                        {showUsernameCurrentPassword ? (
+                          <EyeOff className="h-4 w-4" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
+                      </button>
+                    </div>
+                  </label>
+                </div>
+
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                  <p className="text-sm text-slate-600">
+                    {usernameMessage || 'Your current username will be replaced.'}
+                  </p>
+                  <button
+                    className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:opacity-70"
+                    type="submit"
+                    disabled={isUpdatingUsername}
+                  >
+                    {isUpdatingUsername ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <ShieldCheck className="h-4 w-4" />
+                    )}
+                    <span>{isUpdatingUsername ? 'Updating...' : 'Change Username'}</span>
+                  </button>
+                </div>
+              </form>
+
+              <form
+                className="rounded-2xl border border-slate-200 bg-slate-50 p-5"
+                onSubmit={handleUpdatePassword}
+              >
+                <h3 className="text-lg font-semibold text-slate-900">Change Password</h3>
+                <p className="mt-1 text-sm text-slate-600">
+                  Confirm old password, then set a new password.
+                </p>
+
+                <div className="mt-4 space-y-4">
+                  <label className="block space-y-2 text-sm text-slate-700">
+                    <span>Old Password</span>
+                    <div className="relative">
+                      <input
+                        className="w-full rounded-xl border border-slate-300 px-4 py-3 pr-12 outline-none ring-slate-300 transition focus:ring-2"
+                        type={showOldPassword ? 'text' : 'password'}
+                        value={oldPassword}
+                        onChange={(event) => setOldPassword(event.target.value)}
+                        autoComplete="current-password"
+                        required
+                      />
+                      <button
+                        className="absolute right-5 top-1/2 z-10 inline-flex h-10 w-5 -translate-y-1/2 items-center justify-center text-slate-400 transition hover:text-slate-700 focus:outline-none"
+                        type="button"
+                        onClick={() => setShowOldPassword((value) => !value)}
+                        aria-label={showOldPassword ? 'Hide old password' : 'Show old password'}
+                      >
+                        {showOldPassword ? (
+                          <EyeOff className="h-4 w-4" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
+                      </button>
+                    </div>
+                  </label>
+
+                  <label className="block space-y-2 text-sm text-slate-700">
+                    <span>New Password</span>
+                    <div className="relative">
+                      <input
+                        className="w-full rounded-xl border border-slate-300 px-4 py-3 pr-12 outline-none ring-slate-300 transition focus:ring-2"
+                        type={showNewPassword ? 'text' : 'password'}
+                        value={newPassword}
+                        onChange={(event) => setNewPassword(event.target.value)}
+                        autoComplete="new-password"
+                        required
+                      />
+                      <button
+                        className="absolute right-5 top-1/2 z-10 inline-flex h-10 w-5 -translate-y-1/2 items-center justify-center text-slate-400 transition hover:text-slate-700 focus:outline-none"
+                        type="button"
+                        onClick={() => setShowNewPassword((value) => !value)}
+                        aria-label={showNewPassword ? 'Hide new password' : 'Show new password'}
+                      >
+                        {showNewPassword ? (
+                          <EyeOff className="h-4 w-4" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
+                      </button>
+                    </div>
+                  </label>
+
+                  <label className="block space-y-2 text-sm text-slate-700">
+                    <span>Confirm New Password</span>
+                    <div className="relative">
+                      <input
+                        className="w-full rounded-xl border border-slate-300 px-4 py-3 pr-12 outline-none ring-slate-300 transition focus:ring-2"
+                        type={showConfirmPassword ? 'text' : 'password'}
+                        value={confirmPassword}
+                        onChange={(event) => setConfirmPassword(event.target.value)}
+                        autoComplete="new-password"
+                        required
+                      />
+                      <button
+                        className="absolute right-5 top-1/2 z-10 inline-flex h-10 w-5 -translate-y-1/2 items-center justify-center text-slate-400 transition hover:text-slate-700 focus:outline-none"
+                        type="button"
+                        onClick={() => setShowConfirmPassword((value) => !value)}
+                        aria-label={
+                          showConfirmPassword
+                            ? 'Hide confirm password'
+                            : 'Show confirm password'
+                        }
+                      >
+                        {showConfirmPassword ? (
+                          <EyeOff className="h-4 w-4" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
+                      </button>
+                    </div>
+                  </label>
+                </div>
+
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                  <p className="text-sm text-slate-600">
+                    {passwordMessage || 'Minimum 8 characters.'}
+                  </p>
+                  <button
+                    className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:opacity-70"
+                    type="submit"
+                    disabled={isUpdatingPassword}
+                  >
+                    {isUpdatingPassword ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <ShieldCheck className="h-4 w-4" />
+                    )}
+                    <span>{isUpdatingPassword ? 'Updating...' : 'Change Password'}</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          </section>
+        ) : null}
+
+        {activeTab === 'portfolio' ? (
+          <>
+            <section className="rounded-[2rem] bg-white p-6 shadow-[0_18px_60px_rgba(15,23,42,0.08)] sm:p-8">
           <div className="flex flex-wrap items-end gap-3">
             <label className="flex-1 space-y-2 text-sm text-slate-700">
               <span>New category title</span>
@@ -472,14 +948,14 @@ function AdminPage() {
               Add Category
             </button>
           </div>
-        </section>
+            </section>
 
-        <div className="space-y-5">
-          {data.categories.map((category, index) => (
-            <section
-              key={category.id}
-              className="rounded-[2rem] bg-white p-6 shadow-[0_18px_60px_rgba(15,23,42,0.08)] sm:p-8"
-            >
+            <div className="space-y-5">
+              {data.categories.map((category, index) => (
+                <section
+                  key={category.id}
+                  className="rounded-[2rem] bg-white p-6 shadow-[0_18px_60px_rgba(15,23,42,0.08)] sm:p-8"
+                >
               <div className="flex flex-wrap items-center gap-3">
                 <input
                   className="min-w-0 flex-1 rounded-xl border border-slate-300 bg-white px-4 py-3 text-lg font-semibold text-slate-900 outline-none ring-slate-300 transition focus:ring-2"
@@ -571,24 +1047,32 @@ function AdminPage() {
                   </div>
                 ) : null}
               </div>
-            </section>
-          ))}
-        </div>
+                </section>
+              ))}
+            </div>
 
-        <footer className="sticky bottom-4">
-          <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-[0_18px_50px_rgba(15,23,42,0.12)]">
-            <p className="text-sm text-slate-600">{saveMessage || 'All changes are local until you save.'}</p>
-            <button
-              className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:opacity-70"
-              onClick={savePortfolio}
-              type="button"
-              disabled={isSaving || uploadState.isUploading}
-            >
-              {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              <span>{isSaving ? 'Saving...' : 'Save Portfolio'}</span>
-            </button>
-          </div>
-        </footer>
+            <footer className="sticky bottom-4">
+              <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-[0_18px_50px_rgba(15,23,42,0.12)]">
+                <p className="text-sm text-slate-600">
+                  {saveMessage || 'All changes are local until you save.'}
+                </p>
+                <button
+                  className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:opacity-70"
+                  onClick={savePortfolio}
+                  type="button"
+                  disabled={isSaving || uploadState.isUploading}
+                >
+                  {isSaving ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Save className="h-4 w-4" />
+                  )}
+                  <span>{isSaving ? 'Saving...' : 'Save Portfolio'}</span>
+                </button>
+              </div>
+            </footer>
+          </>
+        ) : null}
       </div>
     </div>
   )

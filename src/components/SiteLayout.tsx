@@ -31,7 +31,7 @@ function SiteLayout() {
                 {siteName}
               </p>
               <p className="text-xs uppercase tracking-[0.35em] text-stone-500">
-                Media Studio
+               
               </p>
             </div>
           </Link>

@@ -29,7 +29,7 @@ function ServicesPage() {
         <div className="mt-8 overflow-hidden rounded-[1.75rem] bg-[#d3ab90]">
           <img
             alt="silentspacemedia services visual"
-            className="h-[28rem] w-full object-cover sm:h-[40rem]"
+            className="h-auto w-full"
             src={servicesImageUrl}
           />
         </div>

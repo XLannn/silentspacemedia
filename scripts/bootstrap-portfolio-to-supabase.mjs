@@ -1,19 +1,7 @@
-﻿import { put } from '@vercel/blob'
+import { createClient } from '@supabase/supabase-js'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-
-const PORTFOLIO_JSON_PATH = 'portfolio/portfolio-data.json'
-const IMAGE_PREFIX = 'portfolio/images'
-
-const contentTypeByExtension = {
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.png': 'image/png',
-  '.webp': 'image/webp',
-  '.gif': 'image/gif',
-  '.avif': 'image/avif',
-}
 
 function slugify(value) {
   return value
@@ -21,11 +9,6 @@ function slugify(value) {
     .trim()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
-}
-
-function contentTypeForFile(fileName) {
-  const extension = path.extname(fileName).toLowerCase()
-  return contentTypeByExtension[extension] ?? 'application/octet-stream'
 }
 
 function applyEnvLine(line) {
@@ -67,11 +50,22 @@ async function main() {
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
   await loadDotEnv(root)
 
-  if (!process.env.BLOB_READ_WRITE_TOKEN) {
-    throw new Error(
-      'Missing BLOB_READ_WRITE_TOKEN. Add it to your local .env before running this script.',
-    )
+  const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  const bucket = process.env.VITE_SUPABASE_STORAGE_BUCKET || 'portfolio-images'
+  const table = process.env.VITE_SUPABASE_PORTFOLIO_TABLE || 'portfolio_content'
+
+  if (!supabaseUrl) {
+    throw new Error('Missing VITE_SUPABASE_URL (or SUPABASE_URL).')
   }
+
+  if (!serviceRoleKey) {
+    throw new Error('Missing SUPABASE_SERVICE_ROLE_KEY in .env.local.')
+  }
+
+  const supabase = createClient(supabaseUrl, serviceRoleKey, {
+    auth: { persistSession: false },
+  })
 
   const seedPath = path.join(root, 'src', 'data', 'portfolioSeed.json')
   const assetsPath = path.join(root, 'public', 'assets')
@@ -82,22 +76,28 @@ async function main() {
   const uniqueFileNames = [...new Set(seed.flatMap((category) => category.images))]
   const uploadedMap = new Map()
 
-  console.log(`Uploading ${uniqueFileNames.length} image files to Vercel Blob...`)
+  console.log(`Uploading ${uniqueFileNames.length} image files to Supabase Storage...`)
 
   for (const imageName of uniqueFileNames) {
     const filePath = path.join(assetsPath, imageName)
     const fileBody = await readFile(filePath)
-    const pathname = `${IMAGE_PREFIX}/${imageName}`
+    const storagePath = `seed/${imageName}`
 
-    const blob = await put(pathname, fileBody, {
-      access: 'public',
-      addRandomSuffix: false,
-      allowOverwrite: true,
-      contentType: contentTypeForFile(imageName),
-      cacheControlMaxAge: 60 * 60 * 24 * 30,
+    const { data, error } = await supabase.storage
+      .from(bucket)
+      .upload(storagePath, fileBody, { upsert: true })
+
+    if (error || !data) {
+      throw new Error(`Failed to upload ${imageName}: ${error?.message || 'Unknown error'}`)
+    }
+
+    const { data: publicData } = supabase.storage.from(bucket).getPublicUrl(data.path)
+
+    uploadedMap.set(imageName, {
+      pathname: data.path,
+      url: publicData.publicUrl,
     })
 
-    uploadedMap.set(imageName, blob)
     console.log(`Uploaded: ${imageName}`)
   }
 
@@ -108,11 +108,11 @@ async function main() {
       id: `${categorySlug}-${categoryIndex + 1}`,
       title: category.title,
       images: category.images.map((imageName, imageIndex) => {
-        const blob = uploadedMap.get(imageName)
+        const uploaded = uploadedMap.get(imageName)
         return {
           id: `${categorySlug}-image-${imageIndex + 1}`,
-          url: blob.url,
-          pathname: blob.pathname,
+          url: uploaded.url,
+          pathname: uploaded.pathname,
         }
       }),
     }
@@ -124,15 +124,20 @@ async function main() {
     categories,
   }
 
-  await put(PORTFOLIO_JSON_PATH, JSON.stringify(payload, null, 2), {
-    access: 'public',
-    addRandomSuffix: false,
-    allowOverwrite: true,
-    contentType: 'application/json; charset=utf-8',
-    cacheControlMaxAge: 60,
-  })
+  const { error: upsertError } = await supabase.from(table).upsert(
+    {
+      id: 'primary',
+      data: payload,
+      updated_at: payload.updatedAt,
+    },
+    { onConflict: 'id' },
+  )
 
-  console.log('Portfolio metadata uploaded.')
+  if (upsertError) {
+    throw new Error(`Failed to save portfolio content: ${upsertError.message}`)
+  }
+
+  console.log('Portfolio metadata saved.')
   console.log('Bootstrap complete.')
 }
 

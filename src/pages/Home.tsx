@@ -13,7 +13,7 @@ function HomePage() {
         <div className="overflow-hidden rounded-[2rem] bg-[#e9d9cf]">
           <img
             alt="silentspacemedia featured home visual"
-            className="h-[28rem] w-full object-cover object-top sm:h-[38rem]"
+            className="h-auto w-full"
             src={heroImageUrl}
           />
         </div>
@@ -74,7 +74,7 @@ function HomePage() {
           <div className="relative">
             <img
               alt="silentspacemedia contact visual"
-              className="h-[28rem] w-full object-cover object-top transition duration-500 group-hover:scale-[1.02] sm:h-[40rem]"
+              className="h-auto w-full transition duration-500 group-hover:scale-[1.02]"
               src={homeCtaImageUrl}
             />
             <div className="absolute inset-x-5 bottom-5 rounded-[1.5rem] bg-white/88 p-5 backdrop-blur sm:inset-x-auto sm:right-6 sm:w-[24rem]">

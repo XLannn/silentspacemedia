@@ -1,4 +1,5 @@
 import portfolioSeed from '../data/portfolioSeed.json'
+import { isSupabaseConfigured, portfolioTable, supabase } from './supabase'
 import type {
   PortfolioCategory,
   PortfolioData,
@@ -46,6 +47,8 @@ export const seedPortfolioData: PortfolioData = {
   updatedAt: new Date(0).toISOString(),
   categories: seedPortfolioCategories,
 }
+
+const portfolioRowId = 'primary'
 
 export function normalizePortfolioData(raw: unknown): PortfolioData | null {
   if (!raw || typeof raw !== 'object') {
@@ -144,20 +147,61 @@ export function normalizePortfolioData(raw: unknown): PortfolioData | null {
 }
 
 export async function getPortfolioData(): Promise<PortfolioData> {
+  if (!isSupabaseConfigured || !supabase) {
+    return seedPortfolioData
+  }
+
   try {
-    const response = await fetch('/api/portfolio', { cache: 'no-store' })
+    const { data, error } = await supabase
+      .from(portfolioTable)
+      .select('data')
+      .eq('id', portfolioRowId)
+      .maybeSingle()
 
-    if (response.ok) {
-      const raw = (await response.json()) as unknown
-      const normalized = normalizePortfolioData(raw)
+    if (error) {
+      throw error
+    }
 
-      if (normalized && normalized.categories.length > 0) {
-        return normalized
-      }
+    const normalized = normalizePortfolioData(data?.data)
+
+    if (normalized && normalized.categories.length > 0) {
+      return normalized
     }
   } catch {
     // Ignore and fallback to local seed.
   }
 
   return seedPortfolioData
+}
+
+export async function savePortfolioData(categories: PortfolioCategory[]) {
+  if (!isSupabaseConfigured || !supabase) {
+    return { error: 'Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.' }
+  }
+
+  const payload: PortfolioData = {
+    version: 1,
+    updatedAt: new Date().toISOString(),
+    categories,
+  }
+
+  const { data, error } = await supabase
+    .from(portfolioTable)
+    .upsert(
+      {
+        id: portfolioRowId,
+        data: payload,
+        updated_at: payload.updatedAt,
+      },
+      { onConflict: 'id' },
+    )
+    .select('data')
+    .single()
+
+  if (error) {
+    return { error: error.message }
+  }
+
+  const normalized = normalizePortfolioData(data?.data)
+  return { data: normalized ?? payload }
 }

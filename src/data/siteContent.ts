@@ -1,4 +1,4 @@
-export const siteName = 'silentspacemedia'
+export const siteName = 'Silent Space Media'
 
 export const logoUrl = '/assets/logo-blue.png'
 
