@@ -1,11 +1,18 @@
+import { ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { getPortfolioData, seedPortfolioData } from '../lib/portfolio'
 import type { PortfolioCategory } from '../types/portfolio'
+
+type LightboxState = {
+  categoryId: string
+  imageIndex: number
+}
 
 function PortfolioPage() {
   const [categories, setCategories] = useState<PortfolioCategory[]>(
     seedPortfolioData.categories,
   )
+  const [lightbox, setLightbox] = useState<LightboxState | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -24,6 +31,91 @@ function PortfolioPage() {
       cancelled = true
     }
   }, [])
+
+  const activeCategory = lightbox
+    ? categories.find((category) => category.id === lightbox.categoryId) ?? null
+    : null
+  const activeImage =
+    activeCategory && lightbox
+      ? activeCategory.images[lightbox.imageIndex] ?? null
+      : null
+
+  function openLightbox(categoryId: string, imageIndex: number) {
+    setLightbox({ categoryId, imageIndex })
+  }
+
+  function closeLightbox() {
+    setLightbox(null)
+  }
+
+  function moveLightbox(direction: 1 | -1) {
+    setLightbox((current) => {
+      if (!current) {
+        return current
+      }
+
+      const currentCategory = categories.find(
+        (category) => category.id === current.categoryId,
+      )
+      if (!currentCategory || currentCategory.images.length === 0) {
+        return current
+      }
+
+      const count = currentCategory.images.length
+      const nextIndex = (current.imageIndex + direction + count) % count
+
+      return { ...current, imageIndex: nextIndex }
+    })
+  }
+
+  useEffect(() => {
+    if (!lightbox) {
+      return
+    }
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        closeLightbox()
+        return
+      }
+
+      if (event.key === 'ArrowRight') {
+        event.preventDefault()
+        moveLightbox(1)
+        return
+      }
+
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault()
+        moveLightbox(-1)
+      }
+    }
+
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    window.addEventListener('keydown', onKeyDown)
+
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [lightbox, categories])
+
+  useEffect(() => {
+    if (!lightbox) {
+      return
+    }
+
+    const category = categories.find((item) => item.id === lightbox.categoryId)
+    if (!category || category.images.length === 0) {
+      setLightbox(null)
+      return
+    }
+
+    if (lightbox.imageIndex >= category.images.length) {
+      setLightbox({ categoryId: lightbox.categoryId, imageIndex: 0 })
+    }
+  }, [categories, lightbox])
 
   return (
     <div className="mx-auto max-w-7xl px-5 py-8 sm:px-8 lg:px-10">
@@ -52,21 +144,81 @@ function PortfolioPage() {
             </h2>
             <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
               {section.images.map((image, index) => (
-                <div
+                <button
                   key={image.id}
-                  className="overflow-hidden rounded-[1.5rem] bg-[#f5f1ea]"
+                  className="overflow-hidden rounded-[1.5rem] bg-[#f5f1ea] text-left"
+                  onClick={() => openLightbox(section.id, index)}
+                  type="button"
+                  aria-label={`Open ${section.title} sample ${index + 1}`}
                 >
                   <img
                     alt={`${section.title} work sample ${index + 1}`}
                     className="h-full w-full object-cover transition duration-500 hover:scale-[1.02]"
                     src={image.url}
                   />
-                </div>
+                </button>
               ))}
             </div>
           </section>
         ))}
       </div>
+
+      {lightbox && activeCategory && activeImage ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${activeCategory.title} image viewer`}
+          onClick={closeLightbox}
+        >
+          <button
+            className="absolute right-5 top-5 rounded-full bg-white/15 p-2 text-white transition hover:bg-white/25"
+            type="button"
+            onClick={closeLightbox}
+            aria-label="Close image viewer"
+          >
+            <X className="h-5 w-5" />
+          </button>
+
+          <button
+            className="absolute left-5 top-1/2 -translate-y-1/2 rounded-full bg-white/15 p-2 text-white transition hover:bg-white/25"
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation()
+              moveLightbox(-1)
+            }}
+            aria-label="Previous image"
+          >
+            <ChevronLeft className="h-6 w-6" />
+          </button>
+
+          <button
+            className="absolute right-5 top-1/2 -translate-y-1/2 rounded-full bg-white/15 p-2 text-white transition hover:bg-white/25"
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation()
+              moveLightbox(1)
+            }}
+            aria-label="Next image"
+          >
+            <ChevronRight className="h-6 w-6" />
+          </button>
+
+          <div
+            className="max-h-[90vh] w-full max-w-6xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <img
+              alt={`${activeCategory.title} enlarged view`}
+              className="max-h-[82vh] w-full rounded-2xl object-contain"
+              src={activeImage.url}
+            />
+            <p className="mt-3 text-center text-sm text-white/85">
+              {activeCategory.title} • {lightbox.imageIndex + 1}/{activeCategory.images.length}
+            </p>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
