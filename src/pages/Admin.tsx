@@ -1244,7 +1244,7 @@ function AdminPage() {
                     <div className="h-[calc(100%-64px)] min-h-[80px] overflow-hidden bg-slate-100">
                       <img
                         alt={`${category.title} preview`}
-                        className="h-full w-full object-cover"
+                        className="h-full w-full object-contain"
                         src={image.url}
                       />
                     </div>
