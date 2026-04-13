@@ -27,6 +27,7 @@ import type {
   PortfolioCategory,
   PortfolioData,
   PortfolioImage,
+  PortfolioImageLayout,
 } from '../types/portfolio'
 import type { ContactInquiry } from '../types/contactInquiry'
 
@@ -38,6 +39,39 @@ type UploadState = {
 }
 
 type AdminTab = 'portfolio' | 'credentials' | 'inquiries'
+
+const portfolioImageLayoutOptions: Array<{
+  value: PortfolioImageLayout
+  label: string
+}> = [
+  { value: 'small', label: 'Small' },
+  { value: 'wide', label: 'Wide' },
+  { value: 'tall', label: 'Tall' },
+  { value: 'feature-left', label: 'Feature Left' },
+  { value: 'feature-right', label: 'Feature Right' },
+  { value: 'full', label: 'Full Width' },
+]
+
+const adminPortfolioImageLayoutClassMap: Record<PortfolioImageLayout, string> = {
+  small: 'col-span-1 row-span-1',
+  wide: 'col-span-2 row-span-1 xl:col-span-2',
+  tall: 'col-span-1 row-span-2',
+  'feature-left': 'col-span-2 row-span-2 xl:col-span-2 xl:row-span-2 xl:col-start-1',
+  'feature-right':
+    'col-span-2 row-span-2 xl:col-span-2 xl:row-span-2 xl:col-start-2',
+  full: 'col-span-2 row-span-1 xl:col-span-3',
+}
+
+function getPortfolioImageLayoutClass(layout?: PortfolioImageLayout): string {
+  if (!layout) {
+    return adminPortfolioImageLayoutClassMap.small
+  }
+
+  return (
+    adminPortfolioImageLayoutClassMap[layout] ??
+    adminPortfolioImageLayoutClassMap.small
+  )
+}
 
 function createClientId(prefix: string): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -367,6 +401,58 @@ function AdminPage() {
     )
   }
 
+  function moveImage(
+    categoryId: string,
+    imageId: string,
+    direction: 'up' | 'down',
+  ) {
+    updateCategories((categories) =>
+      categories.map((category) => {
+        if (category.id !== categoryId) {
+          return category
+        }
+
+        const currentIndex = category.images.findIndex((image) => image.id === imageId)
+        if (currentIndex < 0) {
+          return category
+        }
+
+        const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1
+        if (targetIndex < 0 || targetIndex >= category.images.length) {
+          return category
+        }
+
+        const nextImages = [...category.images]
+        const [movedImage] = nextImages.splice(currentIndex, 1)
+        nextImages.splice(targetIndex, 0, movedImage)
+
+        return {
+          ...category,
+          images: nextImages,
+        }
+      }),
+    )
+  }
+
+  function updateImageLayout(
+    categoryId: string,
+    imageId: string,
+    layout: PortfolioImageLayout,
+  ) {
+    updateCategories((categories) =>
+      categories.map((category) =>
+        category.id === categoryId
+          ? {
+              ...category,
+              images: category.images.map((image) =>
+                image.id === imageId ? { ...image, layout } : image,
+              ),
+            }
+          : category,
+      ),
+    )
+  }
+
   async function uploadImages(categoryId: string, files: FileList | null) {
     if (!files || files.length === 0) {
       return
@@ -411,6 +497,7 @@ function AdminPage() {
           id: createClientId('image'),
           url: publicData.publicUrl,
           pathname: uploadData.path,
+          layout: 'small',
         })
       }
 
@@ -1141,27 +1228,70 @@ function AdminPage() {
                     disabled={uploadState.isUploading}
                   />
                 </label>
+                <p className="mt-3 text-xs text-slate-500">
+                  Set layout per image (Small, Wide, Tall, Feature Left/Right, Full Width) and move order to shape each category grid.
+                </p>
               </div>
 
-              <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {category.images.map((image) => (
+              <div className="mt-5 grid auto-rows-[150px] grid-cols-2 grid-flow-dense gap-4 xl:auto-rows-[170px] xl:grid-cols-3">
+                {category.images.map((image, imageIndex) => (
                   <div
                     key={image.id}
-                    className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-slate-100"
+                    className={`overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm ${getPortfolioImageLayoutClass(
+                      image.layout,
+                    )}`}
                   >
-                    <img
-                      alt={`${category.title} preview`}
-                      className="h-56 w-full object-cover"
-                      src={image.url}
-                    />
-                    <div className="absolute inset-x-2 bottom-2 flex justify-end opacity-0 transition group-hover:opacity-100">
+                    <div className="h-[calc(100%-64px)] min-h-[80px] overflow-hidden bg-slate-100">
+                      <img
+                        alt={`${category.title} preview`}
+                        className="h-full w-full object-cover"
+                        src={image.url}
+                      />
+                    </div>
+                    <div className="flex h-16 items-center gap-2 border-t border-slate-200 px-2">
+                      <select
+                        className="h-9 min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-2 text-xs font-medium text-slate-700 outline-none ring-slate-300 transition focus:ring-2"
+                        value={image.layout ?? 'small'}
+                        onChange={(event) =>
+                          updateImageLayout(
+                            category.id,
+                            image.id,
+                            event.target.value as PortfolioImageLayout,
+                          )
+                        }
+                        title="Image layout"
+                      >
+                        {portfolioImageLayoutOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
                       <button
-                        className="rounded-lg bg-white/90 p-2 text-red-600 shadow"
+                        className="rounded-lg border border-slate-300 p-2 text-slate-600 transition hover:border-slate-900 hover:text-slate-900 disabled:opacity-50"
+                        onClick={() => moveImage(category.id, image.id, 'up')}
+                        type="button"
+                        title="Move earlier"
+                        disabled={imageIndex === 0}
+                      >
+                        <ArrowUp className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        className="rounded-lg border border-slate-300 p-2 text-slate-600 transition hover:border-slate-900 hover:text-slate-900 disabled:opacity-50"
+                        onClick={() => moveImage(category.id, image.id, 'down')}
+                        type="button"
+                        title="Move later"
+                        disabled={imageIndex === category.images.length - 1}
+                      >
+                        <ArrowDown className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        className="rounded-lg border border-red-300 p-2 text-red-600 transition hover:border-red-500 hover:bg-red-50"
                         onClick={() => removeImage(category.id, image.id)}
                         type="button"
                         title="Remove image"
                       >
-                        <Trash2 className="h-4 w-4" />
+                        <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </div>
                   </div>

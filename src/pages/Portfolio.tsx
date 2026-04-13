@@ -1,11 +1,29 @@
 import { ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { getPortfolioData, seedPortfolioData } from '../lib/portfolio'
-import type { PortfolioCategory } from '../types/portfolio'
+import type { PortfolioCategory, PortfolioImageLayout } from '../types/portfolio'
 
 type LightboxState = {
   categoryId: string
   imageIndex: number
+}
+
+const portfolioImageLayoutClassMap: Record<PortfolioImageLayout, string> = {
+  small: 'col-span-1 row-span-1',
+  wide: 'col-span-2 row-span-1 xl:col-span-2',
+  tall: 'col-span-1 row-span-2',
+  'feature-left': 'col-span-2 row-span-2 xl:col-span-2 xl:row-span-2 xl:col-start-1',
+  'feature-right':
+    'col-span-2 row-span-2 xl:col-span-2 xl:row-span-2 xl:col-start-2',
+  full: 'col-span-2 row-span-1 xl:col-span-3',
+}
+
+function getPortfolioImageLayoutClass(layout?: PortfolioImageLayout): string {
+  if (!layout) {
+    return portfolioImageLayoutClassMap.small
+  }
+
+  return portfolioImageLayoutClassMap[layout] ?? portfolioImageLayoutClassMap.small
 }
 
 function PortfolioPage() {
@@ -142,11 +160,13 @@ function PortfolioPage() {
             <h2 className="font-heading text-3xl font-bold tracking-tight">
               {section.title}
             </h2>
-            <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="mt-6 grid auto-rows-[160px] grid-cols-2 grid-flow-dense gap-4 xl:auto-rows-[180px] xl:grid-cols-3">
               {section.images.map((image, index) => (
                 <button
                   key={image.id}
-                  className="overflow-hidden rounded-[1.5rem] bg-[#f5f1ea] text-left"
+                  className={`overflow-hidden rounded-[1.5rem] bg-[#f5f1ea] text-left ${getPortfolioImageLayoutClass(
+                    image.layout,
+                  )}`}
                   onClick={() => openLightbox(section.id, index)}
                   type="button"
                   aria-label={`Open ${section.title} sample ${index + 1}`}
@@ -214,7 +234,7 @@ function PortfolioPage() {
               src={activeImage.url}
             />
             <p className="mt-3 text-center text-sm text-white/85">
-              {activeCategory.title} • {lightbox.imageIndex + 1}/{activeCategory.images.length}
+              {activeCategory.title} - {lightbox.imageIndex + 1}/{activeCategory.images.length}
             </p>
           </div>
         </div>

@@ -1,6 +1,8 @@
 import portfolioSeed from '../data/portfolioSeed.json'
 import { isSupabaseConfigured, portfolioTable, supabase } from './supabase'
+import { PORTFOLIO_IMAGE_LAYOUTS } from '../types/portfolio'
 import type {
+  PortfolioImageLayout,
   PortfolioCategory,
   PortfolioData,
   PortfolioImage,
@@ -25,7 +27,18 @@ function createSeedImage(categorySlug: string, imageName: string, index: number)
   return {
     id: `${categorySlug}-image-${index + 1}`,
     url: `/assets/${imageName}`,
+    layout: 'small',
   }
+}
+
+const portfolioImageLayoutSet = new Set<PortfolioImageLayout>(PORTFOLIO_IMAGE_LAYOUTS)
+
+function normalizePortfolioImageLayout(value: unknown): PortfolioImageLayout {
+  if (typeof value === 'string' && portfolioImageLayoutSet.has(value as PortfolioImageLayout)) {
+    return value as PortfolioImageLayout
+  }
+
+  return 'small'
 }
 
 export const seedPortfolioCategories: PortfolioCategory[] = seed.map(
@@ -99,6 +112,7 @@ export function normalizePortfolioData(raw: unknown): PortfolioData | null {
                 id?: unknown
                 url?: unknown
                 pathname?: unknown
+                layout?: unknown
               }
 
               if (typeof imageRecord.url !== 'string' || !imageRecord.url.trim()) {
@@ -111,6 +125,7 @@ export function normalizePortfolioData(raw: unknown): PortfolioData | null {
                     ? imageRecord.id
                     : `${fallbackSlug}-image-${imageIndex + 1}`,
                 url: imageRecord.url,
+                layout: normalizePortfolioImageLayout(imageRecord.layout),
               }
 
               if (

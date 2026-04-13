@@ -84,31 +84,24 @@ function ServicesPage() {
 
       <section className="mt-8 rounded-[2rem] bg-[#d7c3b1] px-6 py-10 sm:px-10">
         <p className="text-sm uppercase tracking-[0.35em] text-stone-600">
-          Join 900+ subscribers
+          Let&apos;s Work Together
         </p>
         <div className="mt-4 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <h2 className="font-heading text-3xl font-bold sm:text-4xl">
-              Stay in the loop with everything you need to know.
+              Ready to start your next creative project?
             </h2>
             <p className="mt-3 max-w-2xl text-sm leading-7 text-stone-700">
-              Stay connected for updates, launches, and new creative work from
-              silentspacemedia.
+              Share your requirement and we&apos;ll plan the right content,
+              design, and rollout support for your brand.
             </p>
           </div>
-          <form className="flex w-full max-w-xl flex-col gap-3 sm:flex-row">
-            <input
-              className="min-h-12 flex-1 rounded-full border border-stone-400/50 bg-white px-5 text-sm outline-none transition focus:border-stone-900"
-              placeholder="Enter your email"
-              type="email"
-            />
-            <button
-              className="rounded-full bg-stone-950 px-6 py-3 text-sm font-semibold text-white transition hover:bg-stone-800"
-              type="button"
-            >
-              Sign up
-            </button>
-          </form>
+          <Link
+            className="inline-flex w-fit rounded-full bg-stone-950 px-6 py-3 text-sm font-semibold text-white transition hover:bg-stone-800"
+            to="/contact"
+          >
+            Contact Us
+          </Link>
         </div>
       </section>
     </div>
