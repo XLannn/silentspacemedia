@@ -15,6 +15,31 @@ type LoadInquiriesResult = {
   error?: string
 }
 
+function formatSubmittedAtIst(date: Date): string {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Kolkata',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(date)
+
+  const pick = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? '00'
+
+  const day = pick('day')
+  const month = pick('month')
+  const year = pick('year')
+  const hour = pick('hour')
+  const minute = pick('minute')
+  const second = pick('second')
+
+  return `${day}-${month}-${year}, Time = ${hour}-${minute}-${second} IST`
+}
+
 export async function submitContactInquiry(
   input: ContactInquiryInput,
 ): Promise<SubmitInquiryResult> {
@@ -38,6 +63,8 @@ export async function submitContactInquiry(
   }
 
   try {
+    const submittedAt = formatSubmittedAtIst(new Date())
+
     await fetch(contactFormSubmitEndpoint, {
       method: 'POST',
       headers: {
@@ -45,8 +72,10 @@ export async function submitContactInquiry(
         Accept: 'application/json',
       },
       body: JSON.stringify({
-        ...payload,
-        submittedAt: new Date().toISOString(),
+        Name: payload.name,
+        Email: payload.email,
+        Message: payload.message,
+        'Submitted At': submittedAt,
         _subject: `New Contact Inquiry from ${payload.name}`,
         _captcha: 'false',
         _template: 'table',
