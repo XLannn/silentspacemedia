@@ -2,7 +2,6 @@ import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
-export const publicSupabaseAnonKey = supabaseAnonKey || ''
 
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey)
 
@@ -26,5 +25,10 @@ export const contactInquiriesTable =
   (import.meta.env.VITE_SUPABASE_CONTACT_TABLE as string | undefined) ||
   'contact_inquiries'
 
-export const contactNotifyWebhookUrl =
-  (import.meta.env.VITE_CONTACT_NOTIFY_WEBHOOK_URL as string | undefined) || ''
+export const contactNotificationEmail =
+  (import.meta.env.VITE_CONTACT_NOTIFICATION_EMAIL as string | undefined) ||
+  'alanbijialex@gmail.com'
+
+export const contactFormSubmitEndpoint =
+  (import.meta.env.VITE_CONTACT_FORMSUBMIT_ENDPOINT as string | undefined) ||
+  `https://formsubmit.co/ajax/${encodeURIComponent(contactNotificationEmail)}`

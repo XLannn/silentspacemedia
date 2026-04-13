@@ -1,8 +1,7 @@
 import {
+  contactFormSubmitEndpoint,
   contactInquiriesTable,
-  contactNotifyWebhookUrl,
   isSupabaseConfigured,
-  publicSupabaseAnonKey,
   supabase,
 } from './supabase'
 import type { ContactInquiry, ContactInquiryInput } from '../types/contactInquiry'
@@ -38,28 +37,23 @@ export async function submitContactInquiry(
     return { error: error.message }
   }
 
-  if (contactNotifyWebhookUrl) {
-    try {
-      await fetch(contactNotifyWebhookUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(publicSupabaseAnonKey
-            ? {
-                apikey: publicSupabaseAnonKey,
-                Authorization: `Bearer ${publicSupabaseAnonKey}`,
-              }
-            : {}),
-        },
-        body: JSON.stringify({
-          type: 'contact_inquiry',
-          submittedAt: new Date().toISOString(),
-          ...payload,
-        }),
-      })
-    } catch {
-      // Keep form success even if webhook fails.
-    }
+  try {
+    await fetch(contactFormSubmitEndpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({
+        ...payload,
+        submittedAt: new Date().toISOString(),
+        _subject: `New Contact Inquiry from ${payload.name}`,
+        _captcha: 'false',
+        _template: 'table',
+      }),
+    })
+  } catch {
+    // Keep form success even if email notification fails.
   }
 
   return {}

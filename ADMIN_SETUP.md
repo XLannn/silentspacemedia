@@ -11,8 +11,10 @@ VITE_SUPABASE_STORAGE_BUCKET=portfolio-images
 VITE_SUPABASE_PORTFOLIO_TABLE=portfolio_content
 VITE_SUPABASE_ADMIN_USERS_TABLE=admin_users
 VITE_SUPABASE_CONTACT_TABLE=contact_inquiries
-# Optional: webhook endpoint for email notifications on each inquiry
-VITE_CONTACT_NOTIFY_WEBHOOK_URL=
+# Contact form email notification (FormSubmit)
+VITE_CONTACT_NOTIFICATION_EMAIL=alanbijialex@gmail.com
+# Optional override endpoint (default is https://formsubmit.co/ajax/<CONTACT_NOTIFICATION_EMAIL>)
+VITE_CONTACT_FORMSUBMIT_ENDPOINT=
 # Optional (only needed for one-time bootstrap script)
 SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 ```
@@ -75,27 +77,13 @@ Use the **Inquiries** tab in `/admin` to view all contact form submissions.
 
 By default, submissions are saved in `contact_inquiries` and visible in admin.
 
-To auto-send each inquiry to your client email:
+This build sends inquiry notifications through FormSubmit to:
 
-1. Deploy the Supabase Edge Function in this repo:
+- `VITE_CONTACT_NOTIFICATION_EMAIL` (default: `alanbijialex@gmail.com`)
 
-```bash
-supabase functions deploy send-contact-email
-```
+No Make scenario is required for email sending with this flow.
 
-2. Set function secrets in Supabase:
-
-```bash
-supabase secrets set RESEND_API_KEY=your_resend_api_key
-supabase secrets set CONTACT_TO_EMAIL=client@email.com
-supabase secrets set CONTACT_FROM_EMAIL="Contact Form <noreply@yourdomain.com>"
-```
-
-3. Set this frontend env variable (local + Vercel):
-
-- `VITE_CONTACT_NOTIFY_WEBHOOK_URL=https://<project-ref>.functions.supabase.co/send-contact-email`
-
-Now, each contact submission is still saved in Supabase and also emailed directly to your client inbox.
+Note: FormSubmit may send a one-time activation email to the receiver mailbox when first used.
 
 ## 7) Optional one-time bootstrap from local `public/assets`
 
