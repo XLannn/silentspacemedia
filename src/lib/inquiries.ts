@@ -37,7 +37,7 @@ function formatSubmittedAtIst(date: Date): string {
   const minute = pick('minute')
   const second = pick('second')
 
-  return `${day}-${month}-${year}, Time = ${hour}-${minute}-${second} IST`
+  return `${day}-${month}-${year}, Time = ${hour}:${minute}:${second} IST`
 }
 
 export async function submitContactInquiry(
