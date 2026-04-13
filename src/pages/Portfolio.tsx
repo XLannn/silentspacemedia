@@ -164,7 +164,7 @@ function PortfolioPage() {
               {section.images.map((image, index) => (
                 <button
                   key={image.id}
-                  className={`overflow-hidden rounded-[1.5rem] bg-[#f5f1ea] text-left ${getPortfolioImageLayoutClass(
+                  className={`overflow-hidden rounded-[1.5rem] bg-[#f5f1ea] p-1 text-left ${getPortfolioImageLayoutClass(
                     image.layout,
                   )}`}
                   onClick={() => openLightbox(section.id, index)}
@@ -173,7 +173,7 @@ function PortfolioPage() {
                 >
                   <img
                     alt={`${section.title} work sample ${index + 1}`}
-                    className="h-full w-full object-contain transition duration-500 hover:scale-[1.02]"
+                    className="h-full w-full rounded-[1.2rem] object-contain transition duration-500 hover:scale-[1.02]"
                     src={image.url}
                   />
                 </button>

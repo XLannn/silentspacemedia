@@ -1241,10 +1241,10 @@ function AdminPage() {
                       image.layout,
                     )}`}
                   >
-                    <div className="h-[calc(100%-64px)] min-h-[80px] overflow-hidden bg-slate-100">
+                    <div className="h-[calc(100%-64px)] min-h-[80px] overflow-hidden rounded-t-[1rem] bg-slate-100 p-1">
                       <img
                         alt={`${category.title} preview`}
-                        className="h-full w-full object-contain"
+                        className="h-full w-full rounded-[0.85rem] object-contain"
                         src={image.url}
                       />
                     </div>
