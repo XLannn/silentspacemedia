@@ -59,7 +59,7 @@ const adminPortfolioImageLayoutClassMap: Record<PortfolioImageLayout, string> = 
   'feature-left': 'col-span-2 row-span-2 xl:col-span-2 xl:row-span-2 xl:col-start-1',
   'feature-right':
     'col-span-2 row-span-2 xl:col-span-2 xl:row-span-2 xl:col-start-2',
-  full: 'col-span-2 row-span-1 xl:col-span-3',
+  full: 'col-span-2 row-span-2 xl:col-span-3 xl:row-span-2',
 }
 
 function getPortfolioImageLayoutClass(layout?: PortfolioImageLayout): string {

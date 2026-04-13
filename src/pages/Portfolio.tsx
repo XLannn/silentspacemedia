@@ -15,7 +15,7 @@ const portfolioImageLayoutClassMap: Record<PortfolioImageLayout, string> = {
   'feature-left': 'col-span-2 row-span-2 xl:col-span-2 xl:row-span-2 xl:col-start-1',
   'feature-right':
     'col-span-2 row-span-2 xl:col-span-2 xl:row-span-2 xl:col-start-2',
-  full: 'col-span-2 row-span-1 xl:col-span-3',
+  full: 'col-span-2 row-span-2 xl:col-span-3 xl:row-span-2',
 }
 
 function getPortfolioImageLayoutClass(layout?: PortfolioImageLayout): string {
@@ -160,11 +160,11 @@ function PortfolioPage() {
             <h2 className="font-heading text-3xl font-bold tracking-tight">
               {section.title}
             </h2>
-            <div className="mt-6 grid auto-rows-[160px] grid-cols-2 grid-flow-dense gap-4 xl:auto-rows-[180px] xl:grid-cols-3">
+            <div className="mt-6 grid auto-rows-[200px] grid-cols-2 grid-flow-dense gap-4 xl:auto-rows-[220px] xl:grid-cols-3">
               {section.images.map((image, index) => (
                 <button
                   key={image.id}
-                  className={`overflow-hidden rounded-[1.5rem] bg-[#f5f1ea] p-1 text-left ${getPortfolioImageLayoutClass(
+                  className={`overflow-hidden rounded-[1.5rem] bg-[#f5f1ea] p-0.5 text-left ${getPortfolioImageLayoutClass(
                     image.layout,
                   )}`}
                   onClick={() => openLightbox(section.id, index)}
